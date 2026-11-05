@@ -1,7 +1,7 @@
 CC = cc
 CFLAGS = -std=c11 -Wall -g
 LDFLAGS =
-LDLIBS = -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+LDLIBS = -lSDL3 -lm
 
 BUILD_DIR = build
 TARGET = $(BUILD_DIR)/visuals
