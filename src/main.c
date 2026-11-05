@@ -1,4 +1,5 @@
 #include <SDL3/SDL.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,6 +8,7 @@
 #define u32 uint32_t
 #define u64 uint64_t
 
+#define b8 int8_t
 #define b32 int32_t
 
 #define f32 float
@@ -24,17 +26,40 @@
 #define TEXTURE_WIDTH SCREEN_WIDTH
 #define TEXTURE_HEIGHT SCREEN_HEIGHT
 
+// TODO(novel): Make this controllable via scroll wheel
 #define SCALE_FACTOR 200
 
 #define OFFSET_X -2
 #define OFFSET_Y -1
 
+// TODO(novel): Make this controllable via a slider in the ui
 #define MAX_ITERATIONS 40
+
+#define VERY_SMALL 0.0001
 
 typedef struct Vector2 {
     f32 x;
     f32 y;
 } Vector2;
+
+f32 vector2_magnitude(Vector2 v) { return sqrt(v.x * v.x + v.y * v.y); }
+f32 vector2_mag_sqared(Vector2 v) { return v.x * v.x + v.y * v.y; }
+
+Vector2 vector2_normalize(Vector2 v) {
+    if (vector2_mag_sqared(v) < VERY_SMALL) {
+        return v;
+    }
+    Vector2 result = {
+        v.x / vector2_magnitude(v),
+        v.y / vector2_magnitude(v),
+    };
+    return result;
+}
+
+Vector2 vector2_scale(Vector2 v, f32 s) {
+    Vector2 result = {v.x * s, v.y * s};
+    return result;
+}
 
 int main() {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -69,6 +94,10 @@ int main() {
     char frame_time_text_buffer[32];
     char fps_text_buffer[32];
 
+    Vector2 camera_pos = {0.0, 0.0};
+    Vector2 camera_velocity = {0.0, 0.0};
+    f32 camera_max_speed = 0.01;
+
     while (app_running) {
         // timing
         u64 frame_start = SDL_GetPerformanceCounter();
@@ -89,7 +118,33 @@ int main() {
             }
         }
 
+        b8* keyboard = (b8*)SDL_GetKeyboardState(NULL);
+        camera_velocity.x = 0.0;
+        camera_velocity.y = 0.0;
+        if (keyboard[SDL_SCANCODE_W]) {
+            camera_velocity.y -= 1;
+        }
+        if (keyboard[SDL_SCANCODE_S]) {
+            camera_velocity.y += 1;
+        }
+        if (keyboard[SDL_SCANCODE_A]) {
+            camera_velocity.x -= 1;
+        }
+        if (keyboard[SDL_SCANCODE_D]) {
+            camera_velocity.x += 1;
+        }
+        
+        // should stay 0 when input is 0
+        camera_velocity = vector2_normalize(camera_velocity);
+        camera_velocity = vector2_scale(camera_velocity, camera_max_speed);
+
+
         // update
+        
+        camera_pos.x += camera_velocity.x;
+        camera_pos.y += camera_velocity.y;
+
+
         snprintf(frame_time_text_buffer, sizeof(frame_time_text_buffer),
                  "Frame Time: %.2f ms", last_frame_time * 1000.0);
         snprintf(fps_text_buffer, sizeof(fps_text_buffer), "FPS: %d",
@@ -98,8 +153,8 @@ int main() {
         for (int y = 0; y < TEXTURE_HEIGHT; y++) {
             for (int x = 0; x < TEXTURE_WIDTH; x++) {
 
-                Vector2 p0 = {x / (f32)SCALE_FACTOR + OFFSET_X,
-                              y / (f32)SCALE_FACTOR + OFFSET_Y};
+                Vector2 p0 = {x / (f32)SCALE_FACTOR + OFFSET_X + camera_pos.x,
+                              y / (f32)SCALE_FACTOR + OFFSET_Y + camera_pos.y};
                 Vector2 p = {0.0, 0.0};
                 Vector2 p2 = {0.0, 0.0};
 
@@ -127,6 +182,7 @@ int main() {
         // render
         void* texture_pixels;
         int pitch;
+        // TODO(novel): Draw the pixels directly in here
         if (SDL_LockTexture(texture, NULL, &texture_pixels, &pitch)) {
             for (int y = 0; y < TEXTURE_HEIGHT; y++) {
                 memcpy((u8*)texture_pixels + y * pitch,
