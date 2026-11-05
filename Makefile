@@ -6,7 +6,7 @@ LDLIBS = -lSDL3 -lm
 BUILD_DIR = build
 TARGET = $(BUILD_DIR)/visuals
 
-SRCS = $(shell find src -name '*.c')
+SRCS = src/main.c
 OBJS = $(SRCS:%.c=$(BUILD_DIR)/%.o)
 
 all: $(TARGET)
