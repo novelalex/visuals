@@ -26,8 +26,7 @@
 #define TEXTURE_WIDTH SCREEN_WIDTH
 #define TEXTURE_HEIGHT SCREEN_HEIGHT
 
-// TODO(novel): Make this controllable via scroll wheel
-#define SCALE_FACTOR 200
+#define INIT_SCALE_FACTOR 200
 
 #define OFFSET_X -2
 #define OFFSET_Y -1
@@ -98,12 +97,18 @@ int main() {
     Vector2 camera_pos = {0.0, 0.0};
     Vector2 camera_velocity = {0.0, 0.0};
     f32 camera_max_speed = 0.01;
+    f32 camera_zoom = INIT_SCALE_FACTOR;
+    f32 camera_zoom_sensitivity = 0.0;
+    f32 scroll_wheel = 0.0f;
 
+    // TODO(novel): Add delta time
+    // TODO(novel): Add click and drag movement
     while (app_running) {
         // timing
         u64 frame_start = SDL_GetPerformanceCounter();
 
         // poll
+        scroll_wheel = 0.0f;
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
             case SDL_EVENT_QUIT:
@@ -114,10 +119,27 @@ int main() {
                     app_running = FALSE;
                 }
                 break;
+            case SDL_EVENT_MOUSE_WHEEL: {
+                scroll_wheel = event.wheel.y;
+            } break;
             default:
                 break;
             }
         }
+        
+        // TODO(novel): Figure out how to zoom into center of screen
+        camera_zoom_sensitivity = fabs(camera_zoom) / 10;
+        if (scroll_wheel > VERY_SMALL) {
+            camera_zoom += camera_zoom_sensitivity;
+            printf("Zoom: %.2f\n", camera_zoom);
+            fflush(stdout);
+        } else if (scroll_wheel < -VERY_SMALL) {
+            camera_zoom -= camera_zoom_sensitivity;
+            printf("Zoom: %.2f\n", camera_zoom);
+            fflush(stdout);
+        }
+
+        camera_max_speed = 1 / camera_zoom_sensitivity;
 
         b8* keyboard = (b8*)SDL_GetKeyboardState(NULL);
         camera_velocity.x = 0.0;
@@ -152,8 +174,8 @@ int main() {
         for (int y = 0; y < TEXTURE_HEIGHT; y++) {
             for (int x = 0; x < TEXTURE_WIDTH; x++) {
 
-                Vector2 p0 = {x / (f32)SCALE_FACTOR + OFFSET_X + camera_pos.x,
-                              y / (f32)SCALE_FACTOR + OFFSET_Y + camera_pos.y};
+                Vector2 p0 = {x / camera_zoom + OFFSET_X + camera_pos.x,
+                              y / camera_zoom + OFFSET_Y + camera_pos.y};
                 Vector2 p = {0.0, 0.0};
                 Vector2 p2 = {0.0, 0.0};
 
