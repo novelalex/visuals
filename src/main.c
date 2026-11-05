@@ -45,6 +45,7 @@ typedef struct Vector2 {
 f32 vector2_magnitude(Vector2 v) { return sqrt(v.x * v.x + v.y * v.y); }
 f32 vector2_mag_sqared(Vector2 v) { return v.x * v.x + v.y * v.y; }
 
+// zero vector stays zero
 Vector2 vector2_normalize(Vector2 v) {
     if (vector2_mag_sqared(v) < VERY_SMALL) {
         return v;
@@ -133,17 +134,15 @@ int main() {
         if (keyboard[SDL_SCANCODE_D]) {
             camera_velocity.x += 1;
         }
-        
+
         // should stay 0 when input is 0
         camera_velocity = vector2_normalize(camera_velocity);
         camera_velocity = vector2_scale(camera_velocity, camera_max_speed);
 
-
         // update
-        
+
         camera_pos.x += camera_velocity.x;
         camera_pos.y += camera_velocity.y;
-
 
         snprintf(frame_time_text_buffer, sizeof(frame_time_text_buffer),
                  "Frame Time: %.2f ms", last_frame_time * 1000.0);
