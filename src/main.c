@@ -32,17 +32,17 @@
 #define OFFSET_Y -1
 
 // TODO(novel): Make this controllable via a slider in the ui
-#define MAX_ITERATIONS 40
+#define MAX_ITERATIONS 50
 
 #define VERY_SMALL 0.0001
 
 typedef struct Vector2 {
-    f32 x;
-    f32 y;
+    f64 x;
+    f64 y;
 } Vector2;
 
-f32 vector2_magnitude(Vector2 v) { return sqrt(v.x * v.x + v.y * v.y); }
-f32 vector2_mag_sqared(Vector2 v) { return v.x * v.x + v.y * v.y; }
+f64 vector2_magnitude(Vector2 v) { return sqrt(v.x * v.x + v.y * v.y); }
+f64 vector2_mag_sqared(Vector2 v) { return v.x * v.x + v.y * v.y; }
 
 // zero vector stays zero
 Vector2 vector2_normalize(Vector2 v) {
@@ -56,7 +56,7 @@ Vector2 vector2_normalize(Vector2 v) {
     return result;
 }
 
-Vector2 vector2_scale(Vector2 v, f32 s) {
+Vector2 vector2_scale(Vector2 v, f64 s) {
     Vector2 result = {v.x * s, v.y * s};
     return result;
 }
@@ -90,16 +90,16 @@ int main() {
 
     SDL_Event event;
 
-    f32 last_frame_time = 0.0;
+    f64 last_frame_time = 0.0;
     char frame_time_text_buffer[32];
     char fps_text_buffer[32];
 
     Vector2 camera_pos = {0.0, 0.0};
     Vector2 camera_velocity = {0.0, 0.0};
-    f32 camera_max_speed = 0.01;
-    f32 camera_zoom = INIT_SCALE_FACTOR;
-    f32 camera_zoom_sensitivity = 0.0;
-    f32 scroll_wheel = 0.0f;
+    f64 camera_max_speed = 0.01;
+    f64 camera_zoom = INIT_SCALE_FACTOR;
+    f64 camera_zoom_sensitivity = 0.0;
+    f64 scroll_wheel = 0.0f;
 
     // TODO(novel): Add delta time
     // TODO(novel): Add click and drag movement
@@ -126,8 +126,7 @@ int main() {
                 break;
             }
         }
-        
-        // TODO(novel): Figure out how to zoom into center of screen
+
         camera_zoom_sensitivity = fabs(camera_zoom) / 10;
         if (scroll_wheel > VERY_SMALL) {
             camera_zoom += camera_zoom_sensitivity;
@@ -173,9 +172,10 @@ int main() {
 
         for (int y = 0; y < TEXTURE_HEIGHT; y++) {
             for (int x = 0; x < TEXTURE_WIDTH; x++) {
-
-                Vector2 p0 = {x / camera_zoom + OFFSET_X + camera_pos.x,
-                              y / camera_zoom + OFFSET_Y + camera_pos.y};
+                Vector2 p_world = {x - (TEXTURE_WIDTH / 2.0),
+                                   y - (TEXTURE_HEIGHT / 2.0)};
+                Vector2 p0 = {p_world.x / camera_zoom + camera_pos.x,
+                              p_world.y / camera_zoom + camera_pos.y};
                 Vector2 p = {0.0, 0.0};
                 Vector2 p2 = {0.0, 0.0};
 
