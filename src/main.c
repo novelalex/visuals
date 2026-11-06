@@ -32,17 +32,17 @@
 #define OFFSET_Y -1
 
 // TODO(novel): Make this controllable via a slider in the ui
-#define MAX_ITERATIONS 50
+#define MAX_ITERATIONS 100
 
 #define VERY_SMALL 0.0001
 
 typedef struct Vector2 {
-    f64 x;
-    f64 y;
+    f32 x;
+    f32 y;
 } Vector2;
 
-f64 vector2_magnitude(Vector2 v) { return sqrt(v.x * v.x + v.y * v.y); }
-f64 vector2_mag_sqared(Vector2 v) { return v.x * v.x + v.y * v.y; }
+f32 vector2_magnitude(Vector2 v) { return sqrt(v.x * v.x + v.y * v.y); }
+f32 vector2_mag_sqared(Vector2 v) { return v.x * v.x + v.y * v.y; }
 
 // zero vector stays zero
 Vector2 vector2_normalize(Vector2 v) {
@@ -56,8 +56,30 @@ Vector2 vector2_normalize(Vector2 v) {
     return result;
 }
 
-Vector2 vector2_scale(Vector2 v, f64 s) {
+Vector2 vector2_add(Vector2 a, Vector2 b) {
+    Vector2 result = {a.x + b.x, a.y + b.y};
+    return result;
+}
+
+Vector2 vector2_sub(Vector2 a, Vector2 b) {
+    Vector2 result = {a.x - b.x, a.y - b.y};
+    return result;
+}
+
+Vector2 vector2_scale(Vector2 v, f32 s) {
     Vector2 result = {v.x * s, v.y * s};
+    return result;
+}
+
+Vector2 screen_to_world(Vector2 screen_pos, Vector2 camera_pos,
+                        f32 camera_zoom) {
+    Vector2 offset = {
+        -SCREEN_WIDTH / 2.0,
+        -SCREEN_HEIGHT / 2.0,
+    };
+    Vector2 result = vector2_add(
+        vector2_scale(vector2_add(screen_pos, offset), 1 / camera_zoom),
+        camera_pos);
     return result;
 }
 
@@ -96,13 +118,16 @@ int main() {
 
     Vector2 camera_pos = {0.0, 0.0};
     Vector2 camera_velocity = {0.0, 0.0};
-    f64 camera_max_speed = 0.01;
-    f64 camera_zoom = INIT_SCALE_FACTOR;
-    f64 camera_zoom_sensitivity = 0.0;
-    f64 scroll_wheel = 0.0f;
+    f32 camera_max_speed = 0.01;
+    f32 camera_zoom = INIT_SCALE_FACTOR;
+    f32 camera_zoom_sensitivity = 0.0;
+    f32 scroll_wheel = 0.0f;
+
+    b8 mouse_dragging = FALSE;
+    Vector2 mouse_pos = {0.0, 0.0};
+    Vector2 last_mouse_pos = {0.0, 0.0};
 
     // TODO(novel): Add delta time
-    // TODO(novel): Add click and drag movement
     while (app_running) {
         // timing
         u64 frame_start = SDL_GetPerformanceCounter();
@@ -122,10 +147,29 @@ int main() {
             case SDL_EVENT_MOUSE_WHEEL: {
                 scroll_wheel = event.wheel.y;
             } break;
+
             default:
                 break;
             }
         }
+
+        last_mouse_pos = mouse_pos;
+        mouse_dragging =
+            SDL_GetMouseState(&mouse_pos.x, &mouse_pos.y) & SDL_BUTTON_LMASK;
+
+        if (mouse_dragging) {
+            Vector2 world_pos =
+                screen_to_world(mouse_pos, camera_pos, camera_zoom);
+            Vector2 last_world_pos =
+                screen_to_world(last_mouse_pos, camera_pos, camera_zoom);
+
+            printf("X: %.2f, Y: %.2f\n", world_pos.x, world_pos.y);
+            fflush(stdout);
+
+            Vector2 mouse_world_diff = vector2_sub(last_world_pos, world_pos);
+            camera_pos = vector2_add(camera_pos, mouse_world_diff);
+        }
+
 
         camera_zoom_sensitivity = fabs(camera_zoom) / 10;
         if (scroll_wheel > VERY_SMALL) {
@@ -172,10 +216,8 @@ int main() {
 
         for (int y = 0; y < TEXTURE_HEIGHT; y++) {
             for (int x = 0; x < TEXTURE_WIDTH; x++) {
-                Vector2 p_world = {x - (TEXTURE_WIDTH / 2.0),
-                                   y - (TEXTURE_HEIGHT / 2.0)};
-                Vector2 p0 = {p_world.x / camera_zoom + camera_pos.x,
-                              p_world.y / camera_zoom + camera_pos.y};
+                Vector2 p0 =
+                    screen_to_world((Vector2){x, y}, camera_pos, camera_zoom);
                 Vector2 p = {0.0, 0.0};
                 Vector2 p2 = {0.0, 0.0};
 
@@ -215,7 +257,7 @@ int main() {
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_SetRenderDrawColor(renderer, 20, 100, 60, 255);
         SDL_RenderTexture(renderer, texture, NULL, NULL);
         SDL_RenderDebugText(renderer, 10.0f, 10.0f, frame_time_text_buffer);
         SDL_RenderDebugText(renderer, 10.0f, 20.0f, fps_text_buffer);
