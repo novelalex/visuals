@@ -83,7 +83,10 @@ Vector2 screen_to_world(Vector2 screen_pos, Vector2 camera_pos,
     return result;
 }
 
-int main() {
+int main(int argc, char** argv) {
+    (void) argc;
+    (void) argv;
+
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         printf("Could not initalize SDL: %s", SDL_GetError());
         return EXIT_FAILURE;
