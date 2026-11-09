@@ -105,6 +105,73 @@ Vector2 screen_to_world(Vector2 screen_pos, Vector2 camera_pos,
     return result;
 }
 
+static i32 g_captures_this_frame = 0;
+
+void ui_capture_input(void) { g_captures_this_frame++; }
+
+void ui_release_input(void) { g_captures_this_frame++; }
+
+b32 ui_focused(void) { return g_captures_this_frame > 0; }
+
+// Slider vocabulary:
+// https://developer.apple.com/design/human-interface-guidelines/sliders
+//
+//  --[]-- <- pretend this is a slider
+//
+//  ------ <- this is the track
+//    []   <- this is the thumb
+typedef struct Slider {
+    Vector2 pos;
+    SDL_FRect track;
+    SDL_FRect thumb;
+    f32 ui_min;
+    f32 ui_max;
+    f32 val_min;
+    f32 val_max;
+    b32 sliding;
+} Slider;
+
+Slider slider_create(Vector2 pos, f32 val_min, f32 val_max, f32 val_init) {
+    Slider s = {0};
+    s.pos = pos;
+    s.track = (SDL_FRect){pos.x, pos.y, 100, 2};
+    s.thumb = (SDL_FRect){pos.x, pos.y - 4, 5, 10};
+    s.ui_min = pos.x;
+    s.ui_max = pos.x + s.track.w - s.thumb.w / 2.0f;
+    s.val_min = val_min;
+    s.val_max = val_max;
+    s.sliding = FALSE;
+
+    s.thumb.x = MAPVAL(val_init, val_min, val_max, s.ui_min, s.ui_max);
+
+    return s;
+}
+
+void slider_button_down(Slider* s, f32 x, f32 y) {
+    if (SDL_PointInRectFloat(&(SDL_FPoint){x, y}, &s->thumb)) {
+        s->sliding = TRUE;
+        ui_capture_input();
+    }
+}
+
+void slider_button_up(Slider* s) {
+    s->sliding = FALSE;
+    ui_release_input();
+}
+
+void slider_update(Slider* s, f32* val, Vector2 pos) {
+    if (!s->sliding) {
+        return;
+    }
+    s->thumb.x = CLAMP(pos.x, s->ui_min, s->ui_max);
+    *val = MAPVAL(s->thumb.x, s->ui_min, s->ui_max, s->val_min, s->val_max);
+}
+
+void slider_draw(Slider* s, SDL_Renderer* renderer) {
+    SDL_RenderFillRect(renderer, &s->track);
+    SDL_RenderFillRect(renderer, &s->thumb);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -152,23 +219,17 @@ int main(int argc, char** argv) {
     Vector2 mouse_pos = {0.0, 0.0};
     Vector2 last_mouse_pos = {0.0, 0.0};
 
-    // Slider vocabulary:
-    // https://developer.apple.com/design/human-interface-guidelines/sliders
-    Vector2 slider_pos = {10, 45};
-    SDL_FRect slider_track_rect = {slider_pos.x, slider_pos.y, 100, 2};
-    SDL_FRect slider_thumb_rect = {slider_pos.x, slider_pos.y - 4, 5, 10};
-    f32 slider_min = slider_pos.x;
-    f32 slider_max =
-        slider_pos.x + slider_track_rect.w - (slider_thumb_rect.w / 2.0);
-    b32 slider_active = FALSE;
-
-    f32 slider_val_min = 1;
-    f32 slider_val_max = 100;
-
-    i32 max_iterations = INIT_MAX_ITERATIONS;
-    slider_thumb_rect.x = MAPVAL(max_iterations, slider_val_min, slider_val_max,
-                                 slider_min, slider_max);
+    f32 max_iterations = INIT_MAX_ITERATIONS;
     char max_iterations_text_buffer[32];
+
+    Slider max_iterations_slider =
+        slider_create((Vector2){10, 45}, 1, 100, max_iterations);
+
+    f32 cx = 0.5;
+    f32 cy = 0.5;
+    Slider cx_slider = slider_create((Vector2){10, 55}, -1, 1, cx);
+    Slider cy_slider = slider_create((Vector2){10, 65}, -1, 1, cy);
+
 // TODO(novel): Add delta time
 
 // https://coolors.co/fde8e9-e3bac6-bc9ec1-596475-1f2232
@@ -199,14 +260,19 @@ int main(int argc, char** argv) {
             } break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN: {
                 if (event.button.button == SDL_BUTTON_LEFT) {
-                    slider_active = SDL_PointInRectFloat(
-                        &(SDL_FPoint){event.button.x, event.button.y},
-                        &slider_thumb_rect);
+                    slider_button_down(&max_iterations_slider, event.button.x,
+                                       event.button.y);
+                    slider_button_down(&cx_slider, event.button.x,
+                                        event.button.y);
+                    slider_button_down(&cy_slider, event.button.x,
+                                       event.button.y);
                 }
             } break;
             case SDL_EVENT_MOUSE_BUTTON_UP: {
                 if (event.button.button == SDL_BUTTON_LEFT) {
-                    slider_active = FALSE;
+                    slider_button_up(&max_iterations_slider);
+                    slider_button_up(&cx_slider);
+                    slider_button_up(&cy_slider);
                 }
             } break;
             default:
@@ -218,7 +284,7 @@ int main(int argc, char** argv) {
         mouse_dragging =
             SDL_GetMouseState(&mouse_pos.x, &mouse_pos.y) & SDL_BUTTON_LMASK;
 
-        if (mouse_dragging && (!slider_active)) {
+        if (mouse_dragging && (!ui_focused())) {
             Vector2 world_pos =
                 screen_to_world(mouse_pos, camera_pos, camera_zoom);
             Vector2 last_world_pos =
@@ -231,13 +297,9 @@ int main(int argc, char** argv) {
             camera_pos = vector2_add(camera_pos, mouse_world_diff);
         }
 
-        if (slider_active) {
-            slider_thumb_rect.x = CLAMP(mouse_pos.x, slider_min, slider_max);
-            max_iterations = MAPVAL(slider_thumb_rect.x, slider_min, slider_max,
-                                    slider_val_min, slider_val_max);
-            // printf("MAX_ITERATIONS: %d\n", max_iterations);
-            // fflush(stdout);
-        }
+        slider_update(&max_iterations_slider, &max_iterations, mouse_pos);
+        slider_update(&cx_slider, &cx, mouse_pos);
+        slider_update(&cy_slider, &cy, mouse_pos);
 
         camera_zoom_sensitivity = fabs(camera_zoom) / 10;
         if (scroll_wheel > VERY_SMALL) {
@@ -282,29 +344,30 @@ int main(int argc, char** argv) {
         snprintf(fps_text_buffer, sizeof(fps_text_buffer), "FPS: %d",
                  (int)(1.0 / last_frame_time));
         snprintf(max_iterations_text_buffer, sizeof(max_iterations_text_buffer),
-                 "Max Iterations: %d", max_iterations);
+                 "Max Iterations: %.0f", max_iterations);
 
+        f32 R = 4;
+        Vector2 C = {cx, cy};
         for (int y = 0; y < TEXTURE_HEIGHT; y++) {
             for (int x = 0; x < TEXTURE_WIDTH; x++) {
-                Vector2 p0 =
+                Vector2 z =
                     screen_to_world((Vector2){x, y}, camera_pos, camera_zoom);
-                Vector2 p = {0.0, 0.0};
-                Vector2 p2 = {0.0, 0.0};
 
                 f32 iteration = 0;
 
                 // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Optimized_escape_time_algorithms
-                while ((p2.x + p2.y <= 4) && (iteration < max_iterations)) {
-                    p2.x = p.x * p.x;
-                    p2.y = p.y * p.y;
-                    p.y = 2 * p.x * p.y + p0.y;
-                    p.x = p2.x - p2.y + p0.x;
+                while ((z.x * z.x + z.y * z.y <= R * R) &&
+                       (iteration < max_iterations)) {
+
+                    f32 xtemp = z.x * z.x - z.y * z.y;
+                    z.y = 2 * z.x * z.y + C.y;
+                    z.x = xtemp + C.x;
                     iteration += 1.0;
                 }
-                
+
                 // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Continuous_(smooth)_coloring
                 if (iteration < max_iterations) {
-                    f32 logzn = logf(p.x * p.x + p.y * p.y) / 2.0;
+                    f32 logzn = logf(z.x * z.x + z.y * z.y) / 2.0;
                     f32 nu = logf(logzn / logf(2)) / (logf(2));
                     iteration = iteration + 1 - nu;
                 } else {
@@ -358,8 +421,9 @@ int main(int argc, char** argv) {
         SDL_RenderDebugText(renderer, 10.0f, 20.0f, fps_text_buffer);
         SDL_RenderDebugText(renderer, 10.0f, 30.0f, max_iterations_text_buffer);
 
-        SDL_RenderFillRect(renderer, &slider_track_rect);
-        SDL_RenderFillRect(renderer, &slider_thumb_rect);
+        slider_draw(&max_iterations_slider, renderer);
+        slider_draw(&cx_slider, renderer);
+        slider_draw(&cy_slider, renderer);
 
         SDL_RenderPresent(renderer);
 

@@ -1,0 +1,386 @@
+#include <SDL3/SDL.h>
+#include <math.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#define u8 uint8_t
+#define u32 uint32_t
+#define u64 uint64_t
+
+#define i32 int32_t
+
+#define b8 int8_t
+#define b32 int32_t
+
+#define f32 float
+#define f64 double
+
+#define TRUE 1
+#define FALSE 0
+
+#define TARGET_FPS 30
+#define TARGET_FRAME_TIME (1.0 / TARGET_FPS)
+
+#define SCREEN_WIDTH 640
+#define SCREEN_HEIGHT 360
+
+#define TEXTURE_WIDTH SCREEN_WIDTH
+#define TEXTURE_HEIGHT SCREEN_HEIGHT
+
+#define INIT_ZOOM 200
+
+#define OFFSET_X -2
+#define OFFSET_Y -1
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+#define CLAMP(val, min, max) (MAX(min, MIN(val, max)))
+
+#define MAPVAL(val, min_original, max_original, min_new, max_new)              \
+    (((val) - (min_original)) / ((max_original) - (min_original))) *           \
+            ((max_new) - min_new) +                                            \
+        (min_new)
+
+f32 lerpf(f32 a, f32 b, f32 t) { return a * (1 - t) + b * t; }
+
+SDL_Color color_lerp(SDL_Color a, SDL_Color b, f32 t) {
+    return (SDL_Color){
+        lerpf(a.r, b.r, t),
+        lerpf(a.g, b.g, t),
+        lerpf(a.b, b.b, t),
+        lerpf(a.a, b.a, t),
+    };
+}
+
+#define INIT_MAX_ITERATIONS 50
+
+#define VERY_SMALL 0.0001
+
+typedef struct Vector2 {
+    f32 x;
+    f32 y;
+} Vector2;
+
+f32 vector2_magnitude(Vector2 v) { return sqrt(v.x * v.x + v.y * v.y); }
+f32 vector2_mag_sqared(Vector2 v) { return v.x * v.x + v.y * v.y; }
+
+// zero vector stays zero
+Vector2 vector2_normalize(Vector2 v) {
+    if (vector2_mag_sqared(v) < VERY_SMALL) {
+        return v;
+    }
+    Vector2 result = {
+        v.x / vector2_magnitude(v),
+        v.y / vector2_magnitude(v),
+    };
+    return result;
+}
+
+Vector2 vector2_add(Vector2 a, Vector2 b) {
+    Vector2 result = {a.x + b.x, a.y + b.y};
+    return result;
+}
+
+Vector2 vector2_sub(Vector2 a, Vector2 b) {
+    Vector2 result = {a.x - b.x, a.y - b.y};
+    return result;
+}
+
+Vector2 vector2_scale(Vector2 v, f32 s) {
+    Vector2 result = {v.x * s, v.y * s};
+    return result;
+}
+
+Vector2 screen_to_world(Vector2 screen_pos, Vector2 camera_pos,
+                        f32 camera_zoom) {
+    Vector2 offset = {
+        -SCREEN_WIDTH / 2.0,
+        -SCREEN_HEIGHT / 2.0,
+    };
+    Vector2 result = vector2_add(
+        vector2_scale(vector2_add(screen_pos, offset), 1 / camera_zoom),
+        camera_pos);
+    return result;
+}
+
+int main(int argc, char** argv) {
+    (void)argc;
+    (void)argv;
+
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        printf("Could not initalize SDL: %s", SDL_GetError());
+        return EXIT_FAILURE;
+    }
+
+    SDL_Window* window =
+        SDL_CreateWindow("Mandelbrot", SCREEN_WIDTH, SCREEN_HEIGHT, 0);
+    if (window == NULL) {
+        printf("Could not create window: %s", SDL_GetError());
+        return EXIT_FAILURE;
+    }
+
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);
+    if (renderer == NULL) {
+        printf("Could not create renderer: %s", SDL_GetError());
+        return EXIT_FAILURE;
+    }
+
+    SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                                             SDL_TEXTUREACCESS_STREAMING,
+                                             TEXTURE_WIDTH, TEXTURE_HEIGHT);
+
+    u32 pixel_buffer[TEXTURE_WIDTH * TEXTURE_HEIGHT];
+
+    b32 app_running = TRUE;
+
+    SDL_Event event;
+
+    f64 last_frame_time = 0.0;
+    char frame_time_text_buffer[32];
+    char fps_text_buffer[32];
+
+    Vector2 camera_pos = {0.0, 0.0};
+    Vector2 camera_velocity = {0.0, 0.0};
+    f32 camera_max_speed = 0.01;
+    f32 camera_zoom = INIT_ZOOM;
+    f32 camera_zoom_sensitivity = 0.0;
+    f32 scroll_wheel = 0.0f;
+
+    b8 mouse_dragging = FALSE;
+    Vector2 mouse_pos = {0.0, 0.0};
+    Vector2 last_mouse_pos = {0.0, 0.0};
+
+    // Slider vocabulary:
+    // https://developer.apple.com/design/human-interface-guidelines/sliders
+    Vector2 slider_pos = {10, 45};
+    SDL_FRect slider_track_rect = {slider_pos.x, slider_pos.y, 100, 2};
+    SDL_FRect slider_thumb_rect = {slider_pos.x, slider_pos.y - 4, 5, 10};
+    f32 slider_min = slider_pos.x;
+    f32 slider_max =
+        slider_pos.x + slider_track_rect.w - (slider_thumb_rect.w / 2.0);
+    b32 slider_active = FALSE;
+
+    f32 slider_val_min = 1;
+    f32 slider_val_max = 100;
+
+    i32 max_iterations = INIT_MAX_ITERATIONS;
+    slider_thumb_rect.x = MAPVAL(max_iterations, slider_val_min, slider_val_max,
+                                 slider_min, slider_max);
+    char max_iterations_text_buffer[32];
+// TODO(novel): Add delta time
+
+// https://coolors.co/fde8e9-e3bac6-bc9ec1-596475-1f2232
+#define PALETTE_COUNT 8
+    SDL_Color palette[PALETTE_COUNT] = {
+        {31, 34, 50, 255},    {89, 100, 117, 255},  {188, 158, 193, 255},
+        {227, 186, 198, 255}, {253, 232, 233, 255}, {227, 186, 198, 255},
+        {188, 158, 193, 255}, {89, 100, 117, 255}};
+
+    while (app_running) {
+        // timing
+        u64 frame_start = SDL_GetPerformanceCounter();
+
+        // poll
+        scroll_wheel = 0.0f;
+        while (SDL_PollEvent(&event)) {
+            switch (event.type) {
+            case SDL_EVENT_QUIT:
+                app_running = FALSE;
+                break;
+            case SDL_EVENT_KEY_DOWN:
+                if (event.key.scancode == SDL_SCANCODE_Q) {
+                    app_running = FALSE;
+                }
+                break;
+            case SDL_EVENT_MOUSE_WHEEL: {
+                scroll_wheel = event.wheel.y;
+            } break;
+            case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    slider_active = SDL_PointInRectFloat(
+                        &(SDL_FPoint){event.button.x, event.button.y},
+                        &slider_thumb_rect);
+                }
+            } break;
+            case SDL_EVENT_MOUSE_BUTTON_UP: {
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    slider_active = FALSE;
+                }
+            } break;
+            default:
+                break;
+            }
+        }
+
+        last_mouse_pos = mouse_pos;
+        mouse_dragging =
+            SDL_GetMouseState(&mouse_pos.x, &mouse_pos.y) & SDL_BUTTON_LMASK;
+
+        if (mouse_dragging && (!slider_active)) {
+            Vector2 world_pos =
+                screen_to_world(mouse_pos, camera_pos, camera_zoom);
+            Vector2 last_world_pos =
+                screen_to_world(last_mouse_pos, camera_pos, camera_zoom);
+
+            // printf("X: %.2f, Y: %.2f\n", world_pos.x, world_pos.y);
+            // fflush(stdout);
+
+            Vector2 mouse_world_diff = vector2_sub(last_world_pos, world_pos);
+            camera_pos = vector2_add(camera_pos, mouse_world_diff);
+        }
+
+        if (slider_active) {
+            slider_thumb_rect.x = CLAMP(mouse_pos.x, slider_min, slider_max);
+            max_iterations = MAPVAL(slider_thumb_rect.x, slider_min, slider_max,
+                                    slider_val_min, slider_val_max);
+            // printf("MAX_ITERATIONS: %d\n", max_iterations);
+            // fflush(stdout);
+        }
+
+        camera_zoom_sensitivity = fabs(camera_zoom) / 10;
+        if (scroll_wheel > VERY_SMALL) {
+            camera_zoom += camera_zoom_sensitivity;
+            // printf("Zoom: %.2f\n", camera_zoom);
+            // fflush(stdout);
+        } else if (scroll_wheel < -VERY_SMALL) {
+            camera_zoom -= camera_zoom_sensitivity;
+            // printf("Zoom: %.2f\n", camera_zoom);
+            // fflush(stdout);
+        }
+
+        camera_max_speed = 1 / camera_zoom_sensitivity;
+
+        b8* keyboard = (b8*)SDL_GetKeyboardState(NULL);
+        camera_velocity.x = 0.0;
+        camera_velocity.y = 0.0;
+        if (keyboard[SDL_SCANCODE_W]) {
+            camera_velocity.y -= 1;
+        }
+        if (keyboard[SDL_SCANCODE_S]) {
+            camera_velocity.y += 1;
+        }
+        if (keyboard[SDL_SCANCODE_A]) {
+            camera_velocity.x -= 1;
+        }
+        if (keyboard[SDL_SCANCODE_D]) {
+            camera_velocity.x += 1;
+        }
+
+        // should stay 0 when input is 0
+        camera_velocity = vector2_normalize(camera_velocity);
+        camera_velocity = vector2_scale(camera_velocity, camera_max_speed);
+
+        // update
+
+        camera_pos.x += camera_velocity.x;
+        camera_pos.y += camera_velocity.y;
+
+        snprintf(frame_time_text_buffer, sizeof(frame_time_text_buffer),
+                 "Frame Time: %.2f ms", last_frame_time * 1000.0);
+        snprintf(fps_text_buffer, sizeof(fps_text_buffer), "FPS: %d",
+                 (int)(1.0 / last_frame_time));
+        snprintf(max_iterations_text_buffer, sizeof(max_iterations_text_buffer),
+                 "Max Iterations: %d", max_iterations);
+
+        for (int y = 0; y < TEXTURE_HEIGHT; y++) {
+            for (int x = 0; x < TEXTURE_WIDTH; x++) {
+                Vector2 p0 =
+                    screen_to_world((Vector2){x, y}, camera_pos, camera_zoom);
+                Vector2 p = {0.0, 0.0};
+                Vector2 p2 = {0.0, 0.0};
+
+                f32 iteration = 0;
+
+                // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Optimized_escape_time_algorithms
+                while ((p2.x + p2.y <= 4) && (iteration < max_iterations)) {
+                    p2.x = p.x * p.x;
+                    p2.y = p.y * p.y;
+                    p.y = 2 * p.x * p.y + p0.y;
+                    p.x = p2.x - p2.y + p0.x;
+                    iteration += 1.0;
+                }
+
+                // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Continuous_(smooth)_coloring
+                if (iteration < max_iterations) {
+                    f32 logzn = logf(p.x * p.x + p.y * p.y) / 2.0;
+                    f32 nu = logf(logzn / logf(2)) / (logf(2));
+                    iteration = iteration + 1 - nu;
+                } else {
+                    u8 r = palette[0].r;
+                    u8 g = palette[0].g;
+                    u8 b = palette[0].b;
+
+                    pixel_buffer[y * TEXTURE_WIDTH + x] =
+                        0xFF000000 | ((u32)r << 16) | ((u32)g << 8) | b;
+                    continue; // color fixed if no escape
+                }
+
+                // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Exponentially_mapped_and_cyclic_iterations
+                f32 s = 0.5;
+                i32 n = PALETTE_COUNT;
+                f32 t = powf(iteration / (f32)max_iterations, s) * n;
+                f32 tpow1_5 = powf(t, 1.5f);
+                i32 v = (i32)tpow1_5;
+                f32 blend = tpow1_5 - floorf(tpow1_5);
+                SDL_Color c1 = palette[v % PALETTE_COUNT];
+                SDL_Color c2 = palette[(v + 1) % PALETTE_COUNT];
+                SDL_Color c = color_lerp(c1, c2, blend);
+
+                u8 r = c.r;
+                u8 g = c.g;
+                u8 b = c.b;
+
+                pixel_buffer[y * TEXTURE_WIDTH + x] =
+                    0xFF000000 | ((u32)r << 16) | ((u32)g << 8) | b;
+            }
+        }
+
+        // render
+        void* texture_pixels;
+        int pitch;
+        // TODO(novel): Draw the pixels directly in here
+        if (SDL_LockTexture(texture, NULL, &texture_pixels, &pitch)) {
+            for (int y = 0; y < TEXTURE_HEIGHT; y++) {
+                memcpy((u8*)texture_pixels + y * pitch,
+                       &pixel_buffer[y * TEXTURE_WIDTH],
+                       TEXTURE_WIDTH * sizeof(u32));
+            }
+            SDL_UnlockTexture(texture);
+        }
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_RenderTexture(renderer, texture, NULL, NULL);
+        SDL_RenderDebugText(renderer, 10.0f, 10.0f, frame_time_text_buffer);
+        SDL_RenderDebugText(renderer, 10.0f, 20.0f, fps_text_buffer);
+        SDL_RenderDebugText(renderer, 10.0f, 30.0f, max_iterations_text_buffer);
+
+        SDL_RenderFillRect(renderer, &slider_track_rect);
+        SDL_RenderFillRect(renderer, &slider_thumb_rect);
+
+        SDL_RenderPresent(renderer);
+
+        // timing
+        u64 frame_end = SDL_GetPerformanceCounter();
+
+        f64 elapsed =
+            (f64)(frame_end - frame_start) / SDL_GetPerformanceFrequency();
+        f64 remaining = TARGET_FRAME_TIME - elapsed;
+        if (remaining > 0.0) {
+            SDL_DelayNS((u64)(remaining * 1e9));
+        }
+
+        last_frame_time = (f64)(SDL_GetPerformanceCounter() - frame_start) /
+                          SDL_GetPerformanceFrequency();
+    }
+
+    SDL_DestroyTexture(texture);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+
+    return EXIT_SUCCESS;
+}
