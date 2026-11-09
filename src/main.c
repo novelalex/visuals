@@ -158,7 +158,16 @@ int main(int argc, char** argv) {
     slider_thumb_rect.x = MAPVAL(max_iterations, slider_val_min, slider_val_max,
                                  slider_min, slider_max);
     char max_iterations_text_buffer[32];
-    // TODO(novel): Add delta time
+// TODO(novel): Add delta time
+
+// https://coolors.co/fde8e9-e3bac6-bc9ec1-596475-1f2232
+#define PALETTE_COUNT 5
+    SDL_Color palette[PALETTE_COUNT] = {{31, 34, 50, 255},
+                                        {89, 100, 117, 255},
+                                        {188, 158, 193, 255},
+                                        {227, 186, 198, 255},
+                                        {253, 232, 233, 255}};
+
     while (app_running) {
         // timing
         u64 frame_start = SDL_GetPerformanceCounter();
@@ -283,10 +292,16 @@ int main(int argc, char** argv) {
                     iteration++;
                 }
 
-                // TODO(novel): Color
-                u8 r = (u8)(iteration / max_iterations * 255);
-                u8 g = r;
-                u8 b = r;
+                // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Exponentially_mapped_and_cyclic_iterations
+                // TODO(novel): I still have banding, im doing somthing wrong :(
+                f32 s = 0.5;
+                i32 n = PALETTE_COUNT;
+                i32 v =
+                    (i32)pow(pow(iteration / (f32)max_iterations, s) * n, 1.5) %
+                    n;
+                u8 r = palette[v].r;
+                u8 g = palette[v].g;
+                u8 b = palette[v].b;
 
                 pixel_buffer[y * TEXTURE_WIDTH + x] =
                     0xFF000000 | ((u32)r << 16) | ((u32)g << 8) | b;
@@ -308,7 +323,7 @@ int main(int argc, char** argv) {
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
-        SDL_SetRenderDrawColor(renderer, 20, 100, 60, 255);
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_RenderTexture(renderer, texture, NULL, NULL);
         SDL_RenderDebugText(renderer, 10.0f, 10.0f, frame_time_text_buffer);
         SDL_RenderDebugText(renderer, 10.0f, 20.0f, fps_text_buffer);
