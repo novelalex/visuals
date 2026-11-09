@@ -8,6 +8,8 @@
 #define u32 uint32_t
 #define u64 uint64_t
 
+#define i32 int32_t
+
 #define b8 int8_t
 #define b32 int32_t
 
@@ -26,13 +28,22 @@
 #define TEXTURE_WIDTH SCREEN_WIDTH
 #define TEXTURE_HEIGHT SCREEN_HEIGHT
 
-#define INIT_SCALE_FACTOR 200
+#define INIT_ZOOM 200
 
 #define OFFSET_X -2
 #define OFFSET_Y -1
 
-// TODO(novel): Make this controllable via a slider in the ui
-#define MAX_ITERATIONS 100
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+#define CLAMP(val, min, max) (MAX(min, MIN(val, max)))
+
+#define MAPVAL(val, min_original, max_original, min_new, max_new)              \
+    (((val) - (min_original)) / ((max_original) - (min_original))) *           \
+            ((max_new) - min_new) +                                            \
+        (min_new)
+
+#define INIT_MAX_ITERATIONS 50
 
 #define VERY_SMALL 0.0001
 
@@ -84,8 +95,8 @@ Vector2 screen_to_world(Vector2 screen_pos, Vector2 camera_pos,
 }
 
 int main(int argc, char** argv) {
-    (void) argc;
-    (void) argv;
+    (void)argc;
+    (void)argv;
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         printf("Could not initalize SDL: %s", SDL_GetError());
@@ -122,7 +133,7 @@ int main(int argc, char** argv) {
     Vector2 camera_pos = {0.0, 0.0};
     Vector2 camera_velocity = {0.0, 0.0};
     f32 camera_max_speed = 0.01;
-    f32 camera_zoom = INIT_SCALE_FACTOR;
+    f32 camera_zoom = INIT_ZOOM;
     f32 camera_zoom_sensitivity = 0.0;
     f32 scroll_wheel = 0.0f;
 
@@ -130,6 +141,23 @@ int main(int argc, char** argv) {
     Vector2 mouse_pos = {0.0, 0.0};
     Vector2 last_mouse_pos = {0.0, 0.0};
 
+    // Slider vocabulary:
+    // https://developer.apple.com/design/human-interface-guidelines/sliders
+    Vector2 slider_pos = {10, 45};
+    SDL_FRect slider_track_rect = {slider_pos.x, slider_pos.y, 100, 2};
+    SDL_FRect slider_thumb_rect = {slider_pos.x, slider_pos.y - 4, 5, 10};
+    f32 slider_min = slider_pos.x;
+    f32 slider_max =
+        slider_pos.x + slider_track_rect.w - (slider_thumb_rect.w / 2.0);
+    b32 slider_active = FALSE;
+
+    f32 slider_val_min = 1;
+    f32 slider_val_max = 100;
+
+    i32 max_iterations = INIT_MAX_ITERATIONS;
+    slider_thumb_rect.x = MAPVAL(max_iterations, slider_val_min, slider_val_max,
+                                 slider_min, slider_max);
+    char max_iterations_text_buffer[32];
     // TODO(novel): Add delta time
     while (app_running) {
         // timing
@@ -143,14 +171,25 @@ int main(int argc, char** argv) {
                 app_running = FALSE;
                 break;
             case SDL_EVENT_KEY_DOWN:
-                if (event.key.scancode == SDL_SCANCODE_ESCAPE) {
+                if (event.key.scancode == SDL_SCANCODE_Q) {
                     app_running = FALSE;
                 }
                 break;
             case SDL_EVENT_MOUSE_WHEEL: {
                 scroll_wheel = event.wheel.y;
             } break;
-
+            case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    slider_active = SDL_PointInRectFloat(
+                        &(SDL_FPoint){event.button.x, event.button.y},
+                        &slider_thumb_rect);
+                }
+            } break;
+            case SDL_EVENT_MOUSE_BUTTON_UP: {
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    slider_active = FALSE;
+                }
+            } break;
             default:
                 break;
             }
@@ -160,29 +199,36 @@ int main(int argc, char** argv) {
         mouse_dragging =
             SDL_GetMouseState(&mouse_pos.x, &mouse_pos.y) & SDL_BUTTON_LMASK;
 
-        if (mouse_dragging) {
+        if (mouse_dragging && (!slider_active)) {
             Vector2 world_pos =
                 screen_to_world(mouse_pos, camera_pos, camera_zoom);
             Vector2 last_world_pos =
                 screen_to_world(last_mouse_pos, camera_pos, camera_zoom);
 
-            printf("X: %.2f, Y: %.2f\n", world_pos.x, world_pos.y);
-            fflush(stdout);
+            // printf("X: %.2f, Y: %.2f\n", world_pos.x, world_pos.y);
+            // fflush(stdout);
 
             Vector2 mouse_world_diff = vector2_sub(last_world_pos, world_pos);
             camera_pos = vector2_add(camera_pos, mouse_world_diff);
         }
 
+        if (slider_active) {
+            slider_thumb_rect.x = CLAMP(mouse_pos.x, slider_min, slider_max);
+            max_iterations = MAPVAL(slider_thumb_rect.x, slider_min, slider_max,
+                                    slider_val_min, slider_val_max);
+            // printf("MAX_ITERATIONS: %d\n", max_iterations);
+            // fflush(stdout);
+        }
 
         camera_zoom_sensitivity = fabs(camera_zoom) / 10;
         if (scroll_wheel > VERY_SMALL) {
             camera_zoom += camera_zoom_sensitivity;
-            printf("Zoom: %.2f\n", camera_zoom);
-            fflush(stdout);
+            // printf("Zoom: %.2f\n", camera_zoom);
+            // fflush(stdout);
         } else if (scroll_wheel < -VERY_SMALL) {
             camera_zoom -= camera_zoom_sensitivity;
-            printf("Zoom: %.2f\n", camera_zoom);
-            fflush(stdout);
+            // printf("Zoom: %.2f\n", camera_zoom);
+            // fflush(stdout);
         }
 
         camera_max_speed = 1 / camera_zoom_sensitivity;
@@ -216,6 +262,8 @@ int main(int argc, char** argv) {
                  "Frame Time: %.2f ms", last_frame_time * 1000.0);
         snprintf(fps_text_buffer, sizeof(fps_text_buffer), "FPS: %d",
                  (int)(1.0 / last_frame_time));
+        snprintf(max_iterations_text_buffer, sizeof(max_iterations_text_buffer),
+                 "Max Iterations: %d", max_iterations);
 
         for (int y = 0; y < TEXTURE_HEIGHT; y++) {
             for (int x = 0; x < TEXTURE_WIDTH; x++) {
@@ -227,7 +275,7 @@ int main(int argc, char** argv) {
                 int iteration = 0;
 
                 // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Optimized_escape_time_algorithms
-                while ((p2.x + p2.y <= 4) && (iteration < MAX_ITERATIONS)) {
+                while ((p2.x + p2.y <= 4) && (iteration < max_iterations)) {
                     p2.x = p.x * p.x;
                     p2.y = p.y * p.y;
                     p.y = 2 * p.x * p.y + p0.y;
@@ -236,7 +284,7 @@ int main(int argc, char** argv) {
                 }
 
                 // TODO(novel): Color
-                u8 r = (u8)(iteration / MAX_ITERATIONS * 255);
+                u8 r = (u8)(iteration / max_iterations * 255);
                 u8 g = r;
                 u8 b = r;
 
@@ -264,6 +312,10 @@ int main(int argc, char** argv) {
         SDL_RenderTexture(renderer, texture, NULL, NULL);
         SDL_RenderDebugText(renderer, 10.0f, 10.0f, frame_time_text_buffer);
         SDL_RenderDebugText(renderer, 10.0f, 20.0f, fps_text_buffer);
+        SDL_RenderDebugText(renderer, 10.0f, 30.0f, max_iterations_text_buffer);
+
+        SDL_RenderFillRect(renderer, &slider_track_rect);
+        SDL_RenderFillRect(renderer, &slider_thumb_rect);
 
         SDL_RenderPresent(renderer);
 

@@ -1,4 +1,4 @@
 build/
-
+.cache/
 .nvim.lua
 compile_commands.json
