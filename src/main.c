@@ -43,6 +43,17 @@
             ((max_new) - min_new) +                                            \
         (min_new)
 
+f32 lerpf(f32 a, f32 b, f32 t) { return a * (1 - t) + b * t; }
+
+SDL_Color color_lerp(SDL_Color a, SDL_Color b, f32 t) {
+    return (SDL_Color){
+        lerpf(a.r, b.r, t),
+        lerpf(a.g, b.g, t),
+        lerpf(a.b, b.b, t),
+        lerpf(a.a, b.a, t),
+    };
+}
+
 #define INIT_MAX_ITERATIONS 50
 
 #define VERY_SMALL 0.0001
@@ -161,12 +172,11 @@ int main(int argc, char** argv) {
 // TODO(novel): Add delta time
 
 // https://coolors.co/fde8e9-e3bac6-bc9ec1-596475-1f2232
-#define PALETTE_COUNT 5
-    SDL_Color palette[PALETTE_COUNT] = {{31, 34, 50, 255},
-                                        {89, 100, 117, 255},
-                                        {188, 158, 193, 255},
-                                        {227, 186, 198, 255},
-                                        {253, 232, 233, 255}};
+#define PALETTE_COUNT 8
+    SDL_Color palette[PALETTE_COUNT] = {
+        {31, 34, 50, 255},    {89, 100, 117, 255},  {188, 158, 193, 255},
+        {227, 186, 198, 255}, {253, 232, 233, 255}, {227, 186, 198, 255},
+        {188, 158, 193, 255}, {89, 100, 117, 255}};
 
     while (app_running) {
         // timing
@@ -281,7 +291,7 @@ int main(int argc, char** argv) {
                 Vector2 p = {0.0, 0.0};
                 Vector2 p2 = {0.0, 0.0};
 
-                int iteration = 0;
+                f32 iteration = 0;
 
                 // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Optimized_escape_time_algorithms
                 while ((p2.x + p2.y <= 4) && (iteration < max_iterations)) {
@@ -289,19 +299,38 @@ int main(int argc, char** argv) {
                     p2.y = p.y * p.y;
                     p.y = 2 * p.x * p.y + p0.y;
                     p.x = p2.x - p2.y + p0.x;
-                    iteration++;
+                    iteration += 1.0;
+                }
+                
+                // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Continuous_(smooth)_coloring
+                if (iteration < max_iterations) {
+                    f32 logzn = logf(p.x * p.x + p.y * p.y) / 2.0;
+                    f32 nu = logf(logzn / logf(2)) / (logf(2));
+                    iteration = iteration + 1 - nu;
+                } else {
+                    u8 r = palette[0].r;
+                    u8 g = palette[0].g;
+                    u8 b = palette[0].b;
+
+                    pixel_buffer[y * TEXTURE_WIDTH + x] =
+                        0xFF000000 | ((u32)r << 16) | ((u32)g << 8) | b;
+                    continue; // color fixed if no escape
                 }
 
                 // https://en.wikipedia.org/wiki/Plotting_algorithms_for_the_Mandelbrot_set#Exponentially_mapped_and_cyclic_iterations
-                // TODO(novel): I still have banding, im doing somthing wrong :(
                 f32 s = 0.5;
                 i32 n = PALETTE_COUNT;
-                i32 v =
-                    (i32)pow(pow(iteration / (f32)max_iterations, s) * n, 1.5) %
-                    n;
-                u8 r = palette[v].r;
-                u8 g = palette[v].g;
-                u8 b = palette[v].b;
+                f32 t = powf(iteration / (f32)max_iterations, s) * n;
+                f32 tpow1_5 = powf(t, 1.5f);
+                i32 v = (i32)tpow1_5;
+                f32 blend = tpow1_5 - floorf(tpow1_5);
+                SDL_Color c1 = palette[v % PALETTE_COUNT];
+                SDL_Color c2 = palette[(v + 1) % PALETTE_COUNT];
+                SDL_Color c = color_lerp(c1, c2, blend);
+
+                u8 r = c.r;
+                u8 g = c.g;
+                u8 b = c.b;
 
                 pixel_buffer[y * TEXTURE_WIDTH + x] =
                     0xFF000000 | ((u32)r << 16) | ((u32)g << 8) | b;
