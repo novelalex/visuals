@@ -109,6 +109,7 @@ int main(int argc, char** argv) {
 
         // 4. Move half the distance from your current position
         // to the selected vertex.
+        //Vector2 last_p = P;
         P = (Vector2){(P.x + V.x) / 2.0, (P.y + V.y) / 2.0};
 
         // 5. Plot the current position.
@@ -145,10 +146,13 @@ int main(int argc, char** argv) {
             SDL_UnlockTexture(texture);
         }
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        // SDL_RenderClear(renderer);
+        SDL_RenderClear(renderer);
 
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_RenderTexture(renderer, texture, NULL, NULL);
+
+        //SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+        //SDL_RenderLine(renderer, last_p.x, last_p.y, P.x, P.y);
 
         SDL_RenderPresent(renderer);
     }

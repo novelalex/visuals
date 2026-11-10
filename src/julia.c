@@ -109,7 +109,7 @@ static i32 g_captures_this_frame = 0;
 
 void ui_capture_input(void) { g_captures_this_frame++; }
 
-void ui_release_input(void) { g_captures_this_frame++; }
+void ui_release_input(void) { g_captures_this_frame--; }
 
 b32 ui_focused(void) { return g_captures_this_frame > 0; }
 
@@ -155,8 +155,10 @@ void slider_button_down(Slider* s, f32 x, f32 y) {
 }
 
 void slider_button_up(Slider* s) {
-    s->sliding = FALSE;
-    ui_release_input();
+    if (s->sliding) {
+        s->sliding = FALSE;
+        ui_release_input();
+    }
 }
 
 void slider_update(Slider* s, f32* val, Vector2 pos) {
@@ -263,7 +265,7 @@ int main(int argc, char** argv) {
                     slider_button_down(&max_iterations_slider, event.button.x,
                                        event.button.y);
                     slider_button_down(&cx_slider, event.button.x,
-                                        event.button.y);
+                                       event.button.y);
                     slider_button_down(&cy_slider, event.button.x,
                                        event.button.y);
                 }
