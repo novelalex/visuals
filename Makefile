@@ -5,12 +5,15 @@ BUILD=build
 
 COMPILE=$(COMPILER) $(OPTIONS) $(LIBS)
 
-all: $(BUILD)/mandelbrot $(BUILD)/julia
+all: $(BUILD)/mandelbrot $(BUILD)/julia $(BUILD)/chaos_game
 
 $(BUILD)/mandelbrot: src/mandelbrot.c | build
 	$(COMPILE) $< -o $@
 
 $(BUILD)/julia: src/julia.c | build
+	$(COMPILE) $< -o $@
+
+$(BUILD)/chaos_game: src/chaos_game.c | build
 	$(COMPILE) $< -o $@
 
 build:
