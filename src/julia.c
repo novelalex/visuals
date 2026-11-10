@@ -182,7 +182,7 @@ int main(int argc, char** argv) {
     }
 
     SDL_Window* window =
-        SDL_CreateWindow("Mandelbrot", SCREEN_WIDTH, SCREEN_HEIGHT, 0);
+        SDL_CreateWindow("Julia", SCREEN_WIDTH, SCREEN_HEIGHT, 0);
     if (window == NULL) {
         printf("Could not create window: %s", SDL_GetError());
         return EXIT_FAILURE;
