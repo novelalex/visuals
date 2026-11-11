@@ -40,4 +40,10 @@ Vector2 vector2_scale(Vector2 v, f32 s) {
     return result;
 }
 
+Vector2 vector2_lerp(Vector2 a, Vector2 b, f32 t) {
+    return (Vector2){lerpf(a.x, b.x, t), lerpf(a.y, b.y, t)};
+}
+
+Vector2 vector2_orthogonal(Vector2 v) { return (Vector2){-v.y, v.x}; }
+
 #endif // VECTOR_H

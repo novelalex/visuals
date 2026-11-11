@@ -1,11 +1,11 @@
 COMPILER=clang
-OPTIONS=-std=c11 -Wall -Wextra -Wpedantic -g
+OPTIONS=-std=c11 -Wall -Wextra -Wpedantic -g -O0
 LIBS=-lSDL3 -lm
 BUILD=build
 
 COMPILE=$(COMPILER) $(OPTIONS) $(LIBS)
 
-all: $(BUILD)/mandelbrot $(BUILD)/julia $(BUILD)/chaos_game
+all: $(BUILD)/mandelbrot $(BUILD)/julia $(BUILD)/chaos_game $(BUILD)/koch
 
 $(BUILD)/mandelbrot: src/mandelbrot.c | build
 	$(COMPILE) $< -o $@
@@ -14,6 +14,9 @@ $(BUILD)/julia: src/julia.c | build
 	$(COMPILE) $< -o $@
 
 $(BUILD)/chaos_game: src/chaos_game.c | build
+	$(COMPILE) $< -o $@
+
+$(BUILD)/koch: src/koch.c | build
 	$(COMPILE) $< -o $@
 
 build:

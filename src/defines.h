@@ -1,8 +1,8 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #define u8 uint8_t
 #define u16 uint16_t
@@ -34,6 +34,13 @@
     (((val) - (min_original)) / ((max_original) - (min_original))) *           \
             ((max_new) - min_new) +                                            \
         (min_new)
+
+#define SWAP(type, a, b)                                                       \
+    do {                                                                       \
+        type _swap_temp = (a);                                                 \
+        (a) = (b);                                                             \
+        (b) = _swap_temp;                                                      \
+    } while (0)
 
 f32 lerpf(f32 a, f32 b, f32 t) { return a * (1 - t) + b * t; }
 

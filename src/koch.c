@@ -1,4 +1,5 @@
 #include <SDL3/SDL.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -12,6 +13,60 @@
 #define TEXTURE_WIDTH SCREEN_WIDTH
 #define TEXTURE_HEIGHT SCREEN_HEIGHT
 
+u32 pixel_buffer[TEXTURE_WIDTH * TEXTURE_HEIGHT];
+
+void draw_point(Vector2 point) {
+    u32 x = (u32)floor(point.x);
+    u32 y = (u32)floor(point.y);
+
+    if ((x >= TEXTURE_WIDTH) || (y >= TEXTURE_HEIGHT)) {
+        return;
+    }
+
+    pixel_buffer[y * TEXTURE_WIDTH + x] = 0xFFFFFFFF;
+}
+
+// https://haqr.eu/tinyrenderer/bresenham/
+// by Dmitry V. Sokolov under zlib licence
+void draw_line(Vector2 a, Vector2 b) {
+    b32 steep = fabs(a.x - b.x) < fabs(a.y - b.y);
+    if (steep) {
+        SWAP(f32, a.x, a.y);
+        SWAP(f32, b.x, b.y);
+    }
+    if (a.x > b.x) {
+        SWAP(Vector2, a, b);
+    }
+    i32 y = a.y;
+    i32 ierror = 0;
+    for (i32 x = a.x; x <= b.x; x++) {
+        if (steep) {
+            draw_point((Vector2){y, x});
+        } else {
+            draw_point((Vector2){x, y});
+        }
+        ierror += 2 * fabs(b.y - a.y);
+        y += (b.y > a.y ? 1 : -1) * (ierror > b.x - a.x);
+        ierror -= 2 * (b.x - a.x) * (ierror > b.x - a.x);
+    }
+}
+
+typedef struct KLine {
+    Vector2 a;
+    Vector2 b;
+    b32 dead;
+} KLine;
+
+#define MAX_LINES 5000
+
+void push_line(KLine* lines, KLine line, i32* count) {
+    if (*count < MAX_LINES) {
+        lines[*count] = line;
+        *count = *count + 1;
+    }
+    return;
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -22,7 +77,7 @@ int main(int argc, char** argv) {
     }
 
     SDL_Window* window =
-        SDL_CreateWindow("Chaos Game", SCREEN_WIDTH, SCREEN_HEIGHT, 0);
+        SDL_CreateWindow("Koch", SCREEN_WIDTH, SCREEN_HEIGHT, 0);
     if (window == NULL) {
         printf("Could not create window: %s", SDL_GetError());
         return EXIT_FAILURE;
@@ -38,53 +93,16 @@ int main(int argc, char** argv) {
                                              SDL_TEXTUREACCESS_STREAMING,
                                              TEXTURE_WIDTH, TEXTURE_HEIGHT);
 
-    u32 pixel_buffer[TEXTURE_WIDTH * TEXTURE_HEIGHT];
-
     b32 app_running = TRUE;
 
     SDL_Event event;
 
-    srand(time(NULL));
-
-    // https://en.wikipedia.org/wiki/Sierpiński_triangle#Chaos_game
-    // I will be pasting in the steps verbatim
-
-    // 1. Take three points in a plane to form a triangle.
-    Vector2 A = {SCREEN_WIDTH / 2, 0};
-    Vector2 B = {SCREEN_WIDTH, SCREEN_HEIGHT};
-    Vector2 C = {0, SCREEN_HEIGHT};
-
-    Vector2 Verts[3] = {A, B, C};
-
-    // // https://en.wikipedia.org/wiki/Barycentric_coordinate_system
-
-    // f32 wA = rand() / (f32)RAND_MAX;
-    // f32 wB = rand() / (f32)RAND_MAX;
-    // f32 wC = rand() / (f32)RAND_MAX;
-    //
-    // f32 weight_sum = wA + wB + wC;
-    // wA /= weight_sum;
-    // wB /= weight_sum;
-    // wC /= weight_sum;
-
-    // "Generating Random Points in Triangles"
-    // by Greg Turk from Graphics Gems (1990)
-
-    // Also there was like zero need to do this, but its here for reference now.
-
-    // 2. Randomly select any point inside the triangle and consider that your
-    // current position.
-    f32 s = rand() / (f32)RAND_MAX;
-    f32 t = rand() / (f32)RAND_MAX;
-    f32 rt = sqrtf(t);
-
-    f32 wA = 1 - rt;
-    f32 wB = (1 - s) * rt;
-    f32 wC = s * rt;
-
-    Vector2 P = {A.x * wA + B.x * wB + C.x * wC,
-                 A.y * wA + B.y * wB + C.y * wC};
-
+    KLine* lines = (KLine*)malloc(sizeof(KLine) * MAX_LINES);
+    i32 line_count = 0;
+    push_line(lines,
+              (KLine){(Vector2){0, TEXTURE_HEIGHT},
+                      (Vector2){TEXTURE_WIDTH, TEXTURE_HEIGHT}, 0},
+              &line_count);
     while (app_running) {
         // poll
         while (SDL_PollEvent(&event)) {
@@ -103,36 +121,51 @@ int main(int argc, char** argv) {
         }
 
         // update
+        i32 current_lines = MIN(line_count, MAX_LINES);
+        for (i32 j = 0; (j < current_lines) && (line_count < MAX_LINES); j++) {
+            if (!lines[j].dead) {
+                KLine current_line = lines[j];
+                lines[j].dead = TRUE;
 
-        // 3. Randomly select any one of the three vertex points.
-        Vector2 V = Verts[rand() % 3];
+                Vector2 p1 =
+                    vector2_lerp(current_line.a, current_line.b, 1.0 / 3.0);
+                Vector2 p2 =
+                    vector2_lerp(current_line.a, current_line.b, 2.0 / 3.0);
 
-        // 4. Move half the distance from your current position
-        // to the selected vertex.
-        //Vector2 last_p = P;
-        P = (Vector2){(P.x + V.x) / 2.0, (P.y + V.y) / 2.0};
+                KLine s1 = {current_line.a, p1, 0};
+                KLine s3 = {p2, current_line.b, 0};
 
-        // 5. Plot the current position.
+                push_line(lines, s1, &line_count);
+                push_line(lines, s3, &line_count);
+
+                Vector2 midpoint = vector2_lerp(p1, p2, 1.0 / 2.0);
+                Vector2 orth =
+                    vector2_normalize(vector2_orthogonal(vector2_sub(p1, p2)));
+
+                // Height of an equilateral triangle
+                f32 height =
+                    sqrt(3.0) / 2.0 * vector2_magnitude(vector2_sub(p1, p2));
+
+                // The tip of the new triangle
+                Vector2 p3 = vector2_add(vector2_scale(orth, height), midpoint);
+
+                KLine s2a = {p1, p3, 0};
+                KLine s2b = {p3, p2, 0};
+
+                push_line(lines, s2a, &line_count);
+                push_line(lines, s2b, &line_count);
+            }
+        }
 
         // render
-        u8 r = 255;
-        u8 g = 255;
-        u8 b = 255;
+        memset(pixel_buffer, 0, sizeof(pixel_buffer));
 
-        pixel_buffer[(i32)floor(P.y) * TEXTURE_WIDTH + (i32)floor(P.x)] =
-            0xFF000000 | ((u32)r << 16) | ((u32)g << 8) | b;
-        //
-        // for (int y = 0; y < TEXTURE_HEIGHT; y++) {
-        //     for (int x = 0; x < TEXTURE_WIDTH; x++) {
-        //
-        //         u8 r = 255;
-        //         u8 g = 255;
-        //         u8 b = 255;
-        //
-        //         pixel_buffer[y * TEXTURE_WIDTH + x] =
-        //             0xFF000000 | ((u32)r << 16) | ((u32)g << 8) | b;
-        //     }
-        // }
+        for (i32 k = 0; k < MIN(line_count, MAX_LINES); k++) {
+            if (lines[k].dead) {
+                continue;
+            }
+            draw_line(lines[k].a, lines[k].b);
+        }
 
         void* texture_pixels;
         int pitch;
@@ -151,11 +184,10 @@ int main(int argc, char** argv) {
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_RenderTexture(renderer, texture, NULL, NULL);
 
-        //SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-        //SDL_RenderLine(renderer, last_p.x, last_p.y, P.x, P.y);
-
         SDL_RenderPresent(renderer);
     }
+
+    free(lines);
 
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
